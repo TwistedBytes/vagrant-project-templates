@@ -1,0 +1,15 @@
+# No IDE config in git
+.idea
+
+# These vagrant files should not go into git
+.vagrant
+vagrant/private
+vagrant/pma-upload
+vagrant/logs
+vagrant/config/*.new
+
+# Some vendor dirs that should not go into git
+
+
+# Other ignored files...
+
