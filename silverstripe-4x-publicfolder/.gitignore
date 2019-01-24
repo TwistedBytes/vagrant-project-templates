@@ -1,0 +1,28 @@
+# No IDE config in git
+.idea
+
+# These vagrant files should not go into git
+.vagrant
+vagrant/private
+vagrant/pma-upload
+vagrant/logs
+vagrant/config/*.new
+
+# Some vendor dirs that should not go into git
+site/vendor
+site/public/resources/vendor
+site/public/assets/_tinymce
+site/public/assets/error-500.html
+site/public/assets/error-404.html
+
+# .env files should normally not go into git
+# uncomment this when using this project.
+#site/.env
+#site/.env.example
+#Please Keep .env.prod and .env.test when deploying with Buddy.works & Twisted Bytes
+# They are templated version so no passwords in git.
+!site/.env.prod
+!site/.env.test
+
+# Other ignored files...
+
