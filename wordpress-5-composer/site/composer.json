@@ -1,0 +1,34 @@
+{
+  "name": "twistedbytes/wordpress",
+  "description": "WordPress is open source software you can use to create a beautiful website, blog, or app. Based on https://github.com/johnpbloch/wordpress/blob/master/composer.json",
+  "keywords": [
+    "wordpress",
+    "blog",
+    "cms"
+  ],
+  "type": "project",
+  "repositories": [
+    {
+      "type": "composer",
+      "url": "https://wpackagist.org"
+    }
+  ],
+  "require": {
+    "php": ">=7.3",
+    "johnpbloch/wordpress-core-installer": "^1.0",
+    "johnpbloch/wordpress-core": "^5.3",
+    "vlucas/phpdotenv": "^4.0",
+    "wpackagist-theme/twentytwenty": "^1.0"
+  },
+  "extra": {
+    "wordpress-install-dir": "public/wp",
+    "installer-paths": {
+      "public/content/plugins/{$name}/": [
+        "type:wordpress-plugin"
+      ],
+      "public/content/themes/{$name}/": [
+        "type:wordpress-theme"
+      ]
+    }
+  }
+}
