@@ -1,0 +1,15 @@
+---
+Name: myemailconfig
+After:
+  - '#emailconfig'
+---
+SilverStripe\Core\Injector\Injector:
+  Swift_Transport:
+    class: Swift_SmtpTransport
+    properties:
+      Host: localhost
+      Port: 25
+
+SilverStripe\Control\Email\Email:
+  admin_email:
+    support@example.com: 'Support team'
