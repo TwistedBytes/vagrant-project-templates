@@ -1,0 +1,177 @@
+- pipeline: "[PROJECT] deploy"
+  trigger_mode: "ON_EVERY_PUSH"
+  ref_name: "master"
+  ref_type: "BRANCH"
+  fetch_all_refs: true
+  actions:
+      - action: "[Composer] Download & Install Dependencies"
+        type: "BUILD"
+        working_directory: "/buddy/website"
+        docker_image_name: "gnat42/centos7-php74"
+        docker_image_tag: "latest"
+        execute_commands:
+            - "cd site"
+            - "composer install --no-dev --no-progress --optimize-autoloader"
+            - ""
+        setup_commands:
+            - "# Executed on the first pipeline execution only"
+            - "# Popular use case: install packages required by your Run Commands"
+            - "# Changing the image in the Environment tab will run the commands again"
+            - "curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer"
+            - "yum -y install zip unzip php-zip"
+            - ""
+        volume_mappings:
+            - "/:/buddy/website"
+        trigger_condition: "ALWAYS"
+        shell: "BASH"
+
+      - action: "Execute: # webpack"
+        type: "BUILD"
+        disabled: true
+        working_directory: "/buddy/website"
+        docker_image_name: "library/node"
+        docker_image_tag: "12.12"
+        execute_commands:
+            - "cd site/app/client"
+            - "npm install"
+            - "npm run build"
+        setup_commands:
+            - "npm install -g webpack"
+        volume_mappings:
+            - "/:/buddy/website"
+        trigger_condition: "ALWAYS"
+        shell: "BASH"
+
+      - action: "Rsync to Server"
+        type: "RSYNC"
+        local_path: "site/"
+        remote_path: "~/site/deploy-cache/"
+        login: "${SSH_USER}"
+        host: "${SSH_HOST}"
+        port: "${SSH_PORT}"
+        authentication_mode: "WORKSPACE_KEY"
+        archive: true
+        delete_extra_files: true
+        compress: true
+        deployment_excludes:
+          - ".git/"
+          - ".gitignore"
+          - "public/assets/"
+          - "/silverstripe-cache/"
+          - "/logs/"
+          - "node_modules/"
+          - "docroot/cache/"
+          - "install.sh"
+          - "phpunit.xml"
+          - ".editorconfig"
+          - "README.md"
+        trigger_condition: "ALWAYS"
+
+      - action: "Post-deployment action"
+        type: "SSH_COMMAND"
+        working_directory: "site/"
+        login: "${SSH_USER}"
+        host: "${SSH_HOST}"
+        port: "${SSH_PORT}"
+        authentication_mode: "WORKSPACE_KEY"
+        commands:
+          - "if [[ ! -d ~/site/assets ]]; then mkdir ~/site/assets; fi"
+          - "if [[ ! -d ~/site/logs ]]; then mkdir ~/site/logs; fi"
+          - "if [[ ! -d ~/site/releases ]]; then mkdir ~/site/releases; fi"
+          - "rsync -ar --delete deploy-cache/ ~/site/releases/${BUDDY_EXECUTION_REVISION}/"
+          - "echo \"Linking assets to revision: ${BUDDY_EXECUTION_REVISION}\""
+          - "[[ -d ~/site/releases/${BUDDY_EXECUTION_REVISION}/public/assets ]] && rm -Rf ~/site/releases/${BUDDY_EXECUTION_REVISION}/public/assets"
+          - "cd ~/site/releases/${BUDDY_EXECUTION_REVISION}/public/ && ln -sfn ~/site/assets"
+          - "echo \"Setting database config\""
+          - "cd ~/site/releases/${BUDDY_EXECUTION_REVISION}/ && replacevars.sh -i .env.prod -o .env -r true"
+        trigger_condition: "ALWAYS"
+        run_as_script: true
+        shell: "BASH"
+
+
+        # trigger with: --env NEWDB=true
+      - action: "Load Database"
+        type: "SSH_COMMAND"
+        disabled: false
+        login: "$SSH_USER"
+        host: "$SSH_HOST"
+        port: "$SSH_PORT"
+        authentication_mode: "WORKSPACE_KEY"
+        trigger_condition: "VAR_IS"
+        trigger_variable_value: "true"
+        trigger_variable_key: "NEWDB"
+        commands:
+            - |
+              DBFILENAME=defaultsite.sql.gz
+              cd ~/site/releases/${BUDDY_EXECUTION_REVISION}/
+              [[ -d dbload ]] || exit 0
+              cd dbload
+                alias cp='cp'
+                if [[ -f ${DBFILENAME} ]]; then
+                    if [[ -f ~/${DBFILENAME}.md5sum ]]; then
+                        cp -f ~/${DBFILENAME}.md5sum .
+                        md5sum -c ${DBFILENAME}.md5sum || LOADDB=true
+                    else
+                        LOADDB=true
+                    fi
+
+                    if [[ $LOADDB = true ]]; then
+                        echo "new DB file"
+
+                        md5sum ${DBFILENAME} > ~/${DBFILENAME}.md5sum
+                        eval `export-database-info.sh`
+                        zcat ${DBFILENAME} | mysql -u ${ENV_DB_USERNAME} -h ${ENV_DB_HOSTNAME} --password="${ENV_DB_PASSWORD}" ${ENV_DB_DATABASE}
+                    else
+                        echo "existing file"
+                    fi
+                fi
+
+        run_as_script: true
+        shell: "BASH"
+
+      - action: "Remove SS Cache and /DEV/BUILD"
+        type: "SSH_COMMAND"
+        working_directory: "~/site/releases/${BUDDY_EXECUTION_REVISION}/"
+        login: "${SSH_USER}"
+        host: "${SSH_HOST}"
+        port: "${SSH_PORT}"
+        authentication_mode: "WORKSPACE_KEY"
+        commands:
+            - "# rm -f assets/error-404.html"
+            - "# rm -f assets/error-500.html"
+            - "mv silverstripe-cache silverstripe-cache-tmp || echo \"no temp\""
+            - "mkdir silverstripe-cache"
+            - "rm -Rf silverstripe-cache-tmp"
+            - "php vendor/silverstripe/framework/cli-script.php dev/build flush=1"
+
+        trigger_condition: "ALWAYS"
+        run_as_script: true
+        shell: "BASH"
+
+      - action: "Activate current commit"
+        type: "SSH_COMMAND"
+        working_directory: "~/site/"
+        login: "${SSH_USER}"
+        host: "${SSH_HOST}"
+        port: "${SSH_PORT}"
+        authentication_mode: "WORKSPACE_KEY"
+        commands:
+            - "echo \"Linking current to revision: ${BUDDY_EXECUTION_REVISION}\""
+            - "if [ ! -h ~/site/current ] && [ -a ~/site/current ];then echo \"current is not a symlinks, should be. exit!\" ; exit 1;  fi"
+            - "ln -sfn ~/site/releases/${BUDDY_EXECUTION_REVISION} ~/site/current"
+            - "ln -sfn current/public docroot"
+            - "php-fpm-cli -r 'opcache_reset();'"
+            - "echo \"Removing old releases\""
+            - "cd ~/site/releases && ls -t | tail -n +3 | xargs rm -rf"
+
+        trigger_condition: "ALWAYS"
+        run_as_script: true
+        shell: "BASH"
+
+  variables:
+      - key: "SSH_HOST"
+        value: ""
+      - key: "SSH_PORT"
+        value: "22"
+      - key: "SSH_USER"
+        value: "default"
