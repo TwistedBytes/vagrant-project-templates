@@ -92,7 +92,7 @@
         # trigger with: --env NEWDB=true
       - action: "Load Database"
         type: "SSH_COMMAND"
-        disabled: false
+        disabled: true
         login: "$SSH_USER"
         host: "$SSH_HOST"
         port: "$SSH_PORT"
